@@ -185,6 +185,7 @@ class HiggsAudioModelClient:
         max_new_tokens=2048,
         kv_cache_lengths: List[int] = [1024, 4096, 8192],  # Multiple KV cache sizes,
         use_static_kv_cache=False,
+        attn_implementation: Optional[str] = "sdpa", # default "sdpa"
     ):
         # Use explicit device if provided, otherwise try CUDA/MPS/CPU
         if device_id is not None:
@@ -210,8 +211,16 @@ class HiggsAudioModelClient:
         else:
             self._audio_tokenizer = audio_tokenizer
 
+        config = HiggsAudioConfig.from_pretrained(model_path)
+
+        if attn_implementation is not None:
+            config.text_config._attn_implementation = attn_implementation
+        else:
+            if not hasattr(config.text_config, '_attn_implementation') or config.text_config._attn_implementation is None:
+                config.text_config._attn_implementation = "sdpa"
         self._model = HiggsAudioModel.from_pretrained(
             model_path,
+            config=config,
             device_map=self._device,
             torch_dtype=torch.bfloat16,
         )
@@ -682,6 +691,7 @@ def main(
         device_id=device_id,
         max_new_tokens=max_new_tokens,
         use_static_kv_cache=use_static_kv_cache,
+        attn_implementation="sdpa",
     )
 
     pattern = re.compile(r"\[(SPEAKER\d+)\]")
