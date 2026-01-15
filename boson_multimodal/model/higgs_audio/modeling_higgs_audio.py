@@ -1462,14 +1462,17 @@ class HiggsAudioModel(HiggsAudioPreTrainedModel, GenerationMixin):
         num_layers = self.config.text_config.num_hidden_layers
         if self.config.audio_dual_ffn_layers is not None:
             num_layers += len(self.config.audio_dual_ffn_layers)
-        """ Copy the key-value pairs from one cache to another. """
+
         for layer_idx in range(num_layers):
-            from_cache_size = from_cache.get_max_cache_shape()
-            assert to_cache.get_max_cache_shape() >= from_cache_size, (
-                f"The target cache size {to_cache.get_max_cache_shape()} is smaller than the source cache size {from_cache_size}."
+            key, value = from_cache[layer_idx]
+            if key is None:
+                continue
+            to_cache.update(
+                key_states=key,
+                value_states=value,
+                layer_idx=layer_idx,
             )
-            to_cache.key_cache[layer_idx][:, :, :from_cache_size, :] = from_cache.key_cache[layer_idx]
-            to_cache.value_cache[layer_idx][:, :, :from_cache_size, :] = from_cache.value_cache[layer_idx]
+
 
     def _prepare_kv_cache(
         self,
