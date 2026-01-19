@@ -23,3 +23,7 @@ Higgs Audio v2 is also able to generate text. Here's an example that shows it is
 ```bash
 python run_hf_example.py interleaved_dialogue
 ```
+
+### Text-to-Speech Generation
+
+See [TTS_USAGE.md](TTS_USAGE.md) for detailed instructions.

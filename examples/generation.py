@@ -12,7 +12,6 @@ import tqdm
 import yaml
 
 from loguru import logger
-from boson_multimodal.serve.serve_engine import HiggsAudioServeEngine, HiggsAudioResponse
 from boson_multimodal.data_types import Message, ChatMLSample, AudioContent, TextContent
 
 from boson_multimodal.model.higgs_audio import HiggsAudioConfig, HiggsAudioModel
@@ -57,8 +56,8 @@ def normalize_chinese_punctuation(text):
         "）": ")",  # right parenthesis
         "【": "[",  # left square bracket
         "】": "]",  # right square bracket
-        "《": "<",  # left angle quote
-        "》": ">",  # right angle quote
+        "《": "",  # left angle quote
+        "》": "",  # right angle quote
         "“": '"',  # left double quotation
         "”": '"',  # right double quotation
         "‘": "'",  # left single quotation
