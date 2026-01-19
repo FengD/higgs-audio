@@ -9,8 +9,8 @@ import click
 
 from input_samples import INPUT_SAMPLES
 
-MODEL_PATH = "/mnt/fd9ef272-d51b-4896-bfc8-9beaa52ae4a5/dingfeng1/higgs-audio-v2-generation-3B-base/"
-AUDIO_TOKENIZER_PATH = "/mnt/fd9ef272-d51b-4896-bfc8-9beaa52ae4a5/dingfeng1/higgs-audio-v2-tokenizer/"
+MODEL_PATH = "/mnt/515c3d7c-a840-4cc2-aeb4-39b9df1c813f/higgs-audio-v2-generation-3B-base/"
+AUDIO_TOKENIZER_PATH = "/mnt/515c3d7c-a840-4cc2-aeb4-39b9df1c813f/higgs-audio-v2-tokenizer/"
 
 
 @click.command()

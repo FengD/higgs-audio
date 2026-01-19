@@ -23,6 +23,38 @@ from ..data_collator.higgs_audio_collator import HiggsAudioSampleCollator
 from ..audio_processing.higgs_audio_tokenizer import load_higgs_audio_tokenizer
 
 
+def _ensure_attn_implementation_is_set(model: torch.nn.Module, device: str):
+    """
+    transformers>=4.4x uses config._attn_implementation to select the attention backend.
+    In some environments/configs it can end up as None, which will crash inside llama attention:
+        ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
+    Higgs-Audio serving path with StaticCache is designed around SDPA (see modeling_higgs_audio.py),
+    so we default to 'sdpa' when the field is missing.
+    """
+
+    def _fix(cfg, name: str):
+        if cfg is None:
+            return
+        if hasattr(cfg, "_attn_implementation") and getattr(cfg, "_attn_implementation", None) is None:
+            setattr(cfg, "_attn_implementation", "sdpa")
+            logger.info(f"Set {name}._attn_implementation = 'sdpa' (was None)")
+
+    # Top-level config
+    cfg = getattr(model, "config", None)
+    _fix(cfg, "model.config")
+
+    # Common nested configs used by composite models
+    for attr in ("text_config", "audio_config", "decoder_config", "encoder_config"):
+        _fix(getattr(cfg, attr, None), f"model.config.{attr}")
+
+    # Some submodules carry their own config (e.g., LlamaAttention holds a LlamaConfig)
+    # We do a light pass over modules to patch those configs too.
+    for _, m in model.named_modules():
+        mc = getattr(m, "config", None)
+        if mc is not None and hasattr(mc, "_attn_implementation") and getattr(mc, "_attn_implementation", None) is None:
+            setattr(mc, "_attn_implementation", "sdpa")
+
+
 @dataclass
 class HiggsAudioStreamerDelta:
     """Represents a chunk of generated content, either text or audio tokens."""
@@ -213,6 +245,7 @@ class HiggsAudioServeEngine:
         # Initialize model and tokenizer
         self.model = HiggsAudioModel.from_pretrained(model_name_or_path, torch_dtype=torch_dtype).to(device)
         logger.info(f"Loaded model from {model_name_or_path}, dtype: {self.model.dtype}")
+        _ensure_attn_implementation_is_set(self.model, device=device)
 
         if tokenizer_name_or_path is None:
             tokenizer_name_or_path = model_name_or_path
@@ -373,7 +406,9 @@ class HiggsAudioServeEngine:
         if ras_win_len is not None and ras_win_len <= 0:
             ras_win_len = None
 
-        with torch.no_grad():
+        # IMPORTANT: StaticCache allocates KV tensors as "inference tensors" in some PyTorch versions.
+        # Those tensors can only be updated in-place under torch.inference_mode().
+        with torch.inference_mode():
             inputs = self._prepare_inputs(chat_ml_sample, force_audio_gen=force_audio_gen)
             prompt_token_ids = inputs["input_ids"][0].cpu().numpy()
 
@@ -458,7 +493,8 @@ class HiggsAudioServeEngine:
         if ras_win_len is not None and ras_win_len <= 0:
             ras_win_len = None
 
-        with torch.no_grad():
+        # See comment in generate(): KV cache tensors may be inference tensors and require inference_mode.
+        with torch.inference_mode():
             inputs = self._prepare_inputs(chat_ml_sample, force_audio_gen=force_audio_gen)
 
             self._prepare_kv_caches()
