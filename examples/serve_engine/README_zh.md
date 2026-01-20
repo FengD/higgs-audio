@@ -31,6 +31,16 @@ python run_hf_example.py zh_text --text-file /path/to/your/text/file.txt
 python text_to_speech.py --text-file zh.txt --output-file output_custom.wav
 ```
 
+### 4. 多说话人文本生成语音
+
+对于包含多个说话人的文本，我们提供了专用的多说话人脚本`text_to_speech_multi_speaker.py`：
+
+```bash
+python text_to_speech_multi_speaker.py --text-file input_multiuser.txt --output-file output_multi.wav
+```
+
+详见[TTS_MULTI_SPEAKER_USAGE.md](TTS_MULTI_SPEAKER_USAGE.md)获取详细使用说明。
+
 ## 参数说明
 
 - `--text-file`: 输入文本文件的路径（UTF-8编码）

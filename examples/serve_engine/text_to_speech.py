@@ -197,33 +197,15 @@ def _concat_audio_segments(
     segments: List[torch.Tensor],
     sampling_rate: int,
     silence_ms: int = 0,
-    crossfade_ms: int = 0,
 ) -> torch.Tensor:
     """
     Concatenate 1D audio tensors (float) into one 1D tensor.
-    - If crossfade_ms > 0, uses linear crossfade and ignores silence_ms.
     - Else inserts silence between segments.
     """
     if not segments:
         return torch.zeros(0, dtype=torch.float32)
 
     segs = [s.detach().flatten().to(dtype=torch.float32).cpu() for s in segments]
-
-    if crossfade_ms > 0:
-        fade = int(sampling_rate * crossfade_ms / 1000)
-        if fade <= 0:
-            crossfade_ms = 0
-        else:
-            out = segs[0]
-            fade_out = torch.linspace(1.0, 0.0, fade, dtype=torch.float32)
-            fade_in = torch.linspace(0.0, 1.0, fade, dtype=torch.float32)
-            for nxt in segs[1:]:
-                if out.numel() >= fade and nxt.numel() >= fade:
-                    mixed = out[-fade:] * fade_out + nxt[:fade] * fade_in
-                    out = torch.cat([out[:-fade], mixed, nxt[fade:]], dim=0)
-                else:
-                    out = torch.cat([out, nxt], dim=0)
-            return out
 
     # silence-based concatenation
     gap = int(sampling_rate * max(silence_ms, 0) / 1000)
@@ -309,17 +291,17 @@ def get_text_input_sample(
         )
     )
     
-    system_prompt = (
-        "Generate audio following instruction.\n\n"
-        "<|scene_desc_start|>\n"
-        "SPEAKER0: clear voice\n"
-        "<|scene_desc_end|>"
-    )
+    # system_prompt = (
+    #     "Generate audio following instruction.\n\n"
+    #     "<|scene_desc_start|>\n"
+    #     "SPEAKER0: clear voice\n"
+    #     "<|scene_desc_end|>"
+    # )
     
-    messages.insert(0, Message(
-        role="system",
-        content=system_prompt,
-    ))
+    # messages.insert(0, Message(
+    #     role="system",
+    #     content=system_prompt,
+    # ))
 
     chat_ml_sample = ChatMLSample(messages=messages)
     return chat_ml_sample
@@ -335,8 +317,7 @@ def get_text_input_sample(
 @click.option("--max-tokens", type=int, default=2048, help="Maximum number of tokens to generate")
 @click.option("--chunk-max-chars", type=int, default=200, show_default=True, help="Max chars per chunk for long text; auto-split when exceeded")
 @click.option("--chunk-min-chars", type=int, default=20, show_default=True, help="Min chars per chunk; very short tails will be merged")
-@click.option("--silence-ms", type=int, default=20, show_default=True, help="Silence (ms) inserted between chunks when concatenating")
-@click.option("--crossfade-ms", type=int, default=0, show_default=True, help="Crossfade (ms) between chunks (if >0, ignores silence-ms)")
+@click.option("--silence-ms", type=int, default=10, show_default=True, help="Silence (ms) inserted between chunks when concatenating")
 @click.option("--save-chunks-dir", type=click.Path(), default=None, help="If set, save per-chunk wav files into this directory for debugging")
 def main(
     text_file: str,
@@ -349,7 +330,6 @@ def main(
     chunk_max_chars: int,
     chunk_min_chars: int,
     silence_ms: int,
-    crossfade_ms: int,
     save_chunks_dir: Optional[str],
 ):
     """Generate speech from text with optional voice cloning and speed control."""
@@ -366,10 +346,6 @@ def main(
     if not text_content:
         logger.error("Text file is empty")
         return
-    
-    if crossfade_ms > 0 and silence_ms > 0:
-        logger.warning("Both crossfade-ms and silence-ms are set; crossfade-ms will take precedence (silence-ms ignored).")
-        silence_ms = 0
 
     # Long-text chunking (best-effort). We split on the *raw* text, then normalize each chunk.
     chunks = _split_long_text(text_content, max_chars=chunk_max_chars, min_chars=chunk_min_chars)
@@ -382,8 +358,8 @@ def main(
         logger.info(f"Long text detected; split into {len(chunks)} chunks (chunk-max-chars={chunk_max_chars}).")
     
     # Model paths (you may need to adjust these paths)
-    MODEL_PATH = "/mnt/515c3d7c-a840-4cc2-aeb4-39b9df1c813f/higgs-audio-v2-generation-3B-base/"
-    AUDIO_TOKENIZER_PATH = "/mnt/515c3d7c-a840-4cc2-aeb4-39b9df1c813f/higgs-audio-v2-tokenizer/"
+    MODEL_PATH = "/mnt/fd9ef272-d51b-4896-bfc8-9beaa52ae4a5/dingfeng1/higgs-audio-v2-generation-3B-base/"
+    AUDIO_TOKENIZER_PATH = "/mnt/fd9ef272-d51b-4896-bfc8-9beaa52ae4a5/dingfeng1/higgs-audio-v2-tokenizer/"
     
     # Check if model paths exist, if not use HF hub
     if not os.path.exists(MODEL_PATH):
@@ -419,18 +395,15 @@ def main(
             chunk,
             voice_sample,
             voice_text,
-            log_text=(idx == 1),
         )
-
-        
 
         start_time = time.time()
         output: HiggsAudioResponse = serve_engine.generate(
             chat_ml_sample=input_sample,
             max_new_tokens=max_tokens,
             temperature=temperature,
-            top_p=0.95,
-            top_k=40,
+            top_p=0.96,
+            top_k=30,
             stop_strings=["<|end_of_text|>", "<|eot_id|>"],
         )
         elapsed_time = time.time() - start_time
@@ -464,7 +437,7 @@ def main(
             torchaudio.save(chunk_path, audio_tensor[None, :].cpu(), sampling_rate)
 
     assert sampling_rate is not None
-    merged = _concat_audio_segments(all_audio, sampling_rate, silence_ms=silence_ms, crossfade_ms=crossfade_ms)
+    merged = _concat_audio_segments(all_audio, sampling_rate, silence_ms=silence_ms)
 
     # Apply speed adjustment if needed (after merging, so timing stays consistent across chunks)
     if speed != 1.0:

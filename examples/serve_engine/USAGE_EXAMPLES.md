@@ -27,6 +27,14 @@ python run_hf_example.py zh_text --text-file /path/to/your/text/file.txt
 python text_to_speech.py --text-file zh.txt --output-file output_custom.wav
 ```
 
+### 多说话人文本生成
+
+对于包含多个说话人的文本，使用专用的多说话人脚本：
+
+```bash
+python text_to_speech_multi_speaker.py --text-file input_multiuser.txt --output-file output_multi.wav
+```
+
 ## 3. 文本预处理功能
 
 我们的脚本包含了文本预处理功能，可以自动处理中英文标点符号的转换：
@@ -85,9 +93,9 @@ system_prompt = (
 ### 长文本处理
 
 对于较长的文本：
-1. 脚本会自动按句子边界分段逐段生成，并在末尾拼接成一段音频（默认每段约 120 字符）
+1. 脚本会自动按句子边界分段逐段生成，并在末尾拼接成一段音频（默认每段约 200 字符）
 2. 如需更大/更小段落，可通过 `--chunk-max-chars` 调整；设为 0 可禁用分段
-3. 如需让拼接更自然，可使用 `--silence-ms` 插入短静音，或用 `--crossfade-ms` 做交叉淡入淡出
+3. 如需让拼接更自然，可使用 `--silence-ms` 插入短静音
 
 ## 6. 示例输出
 
@@ -103,3 +111,25 @@ system_prompt = (
 ```
 
 生成的音频文件将保存在当前目录下。
+
+## 7. 多说话人示例
+
+### 运行多说话人示例
+
+```bash
+python run_hf_example.py multi_speaker
+```
+
+这将生成一个包含两个说话人的对话音频，每个说话人都有不同的声音特征。
+
+### 多说话人文本格式
+
+多说话人文本需要使用特定的标记格式：
+
+```
+[SPEAKER0] 这是第一个说话人的文本...
+
+[SPEAKER1] 这是第二个说话人的文本...
+```
+
+示例文件可以在[examples/serve_engine/input_multiuser.txt](examples/serve_engine/input_multiuser.txt)找到。

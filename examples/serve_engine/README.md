@@ -27,3 +27,7 @@ python run_hf_example.py interleaved_dialogue
 ### Text-to-Speech Generation
 
 See [TTS_USAGE.md](TTS_USAGE.md) for detailed instructions.
+
+### Multi-Speaker Text-to-Speech Generation
+
+See [TTS_MULTI_SPEAKER_USAGE.md](TTS_MULTI_SPEAKER_USAGE.md) for detailed instructions on generating speech with multiple speakers.
