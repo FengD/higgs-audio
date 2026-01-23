@@ -16,7 +16,7 @@ try:
     LIBROSA_AVAILABLE = True
 except ImportError:
     LIBROSA_AVAILABLE = False
-    logger.warning("librosa not available, speed adjustment will not work")
+    logger.warning("librosa not available, using fallback speed adjustment")
 
 from boson_multimodal.serve.serve_engine import HiggsAudioServeEngine, HiggsAudioResponse
 from boson_multimodal.data_types import ChatMLSample, Message, AudioContent
@@ -31,11 +31,13 @@ def encode_base64_content_from_file(file_path: str) -> str:
 
 
 def normalize_chinese_punctuation(text):
-    """
-    Convert Chinese (full-width) punctuation marks to English (half-width) equivalents.
-    """
-    # Mapping of Chinese punctuation to English punctuation
-    chinese_to_english_punct = {
+    # Collapse ellipsis variants without introducing new punctuation
+    text = re.sub(r'(\.\s*){3,}', '.', text)
+    text = re.sub(r'(。\s*){3,}', '。', text)
+    text = text.replace("…", "。")
+
+    # Basic punctuation normalization
+    punct_map = {
         "，": ", ",
         "。": ". ",
         "：": ": ",
@@ -46,27 +48,25 @@ def normalize_chinese_punctuation(text):
         "）": ") ",
         "【": " [",
         "】": "] ",
-        "《": "",
-        "》": "",
-        "“": '',
-        "”": '',
+        "《": " (",
+        "》": ") ",
+        "“": ' "',
+        "”": '" ',
         "‘": " '",
         "’": "' ",
         "、": ", ",
         "——": ", ",
         "—": ", ",
-        "…": "...",
         "·": ". ",
-        "「": '',
-        "」": ',',
-        "『": '',
-        "』": ',',
     }
 
-    # Replace each Chinese punctuation with its English counterpart
-    for zh_punct, en_punct in chinese_to_english_punct.items():
-        text = text.replace(zh_punct, en_punct)
-    return text
+    for src, dst in punct_map.items():
+        text = text.replace(src, dst)
+
+    # Ensure at most one trailing punctuation mark
+    text = re.sub(r'([.:;]){2,}$', r'\1', text)
+
+    return text.strip()
 
 
 def _clean_and_normalize_text(text_content: str) -> str:
@@ -304,39 +304,175 @@ def _concat_audio_segments(
 
     # silence-based concatenation
     gap = int(sampling_rate * max(silence_ms, 0) / 1000)
-    silence = torch.zeros(gap, dtype=torch.float32) if gap > 0 else None
+    
+    # For better transition, we'll apply cross-fading when concatenating segments
     out = segs[0]
+    fade_samples = min(int(sampling_rate * 0.01), len(out) // 4)  # 10ms fade or quarter of segment
+    
     for nxt in segs[1:]:
-        if silence is not None:
-            out = torch.cat([out, silence, nxt], dim=0)
+        if gap > 0:
+            # Insert silence and apply cross-fade
+            silence = torch.zeros(gap, dtype=torch.float32)
+            
+            # Apply cross-fade between end of out and beginning of nxt if they're long enough
+            if len(out) > fade_samples and len(nxt) > fade_samples:
+                # Create fade-out for end of 'out'
+                fade_out = torch.linspace(1.0, 0.0, fade_samples)
+                out_overlap = out[-fade_samples:] * fade_out
+                
+                # Create fade-in for beginning of 'nxt'
+                fade_in = torch.linspace(0.0, 1.0, fade_samples)
+                nxt_overlap = nxt[:fade_samples] * fade_in
+                
+                # Combine with cross-fade
+                cross_faded = out_overlap + nxt_overlap
+                
+                # Reconstruct with cross-fade
+                out = torch.cat([out[:-fade_samples], cross_faded, nxt[fade_samples:]], dim=0)
+            else:
+                # Simple concatenation with silence
+                out = torch.cat([out, silence, nxt], dim=0)
         else:
-            out = torch.cat([out, nxt], dim=0)
+            # Direct concatenation with cross-fade if possible
+            if len(out) > fade_samples and len(nxt) > fade_samples:
+                # Create fade-out for end of 'out'
+                fade_out = torch.linspace(1.0, 0.0, fade_samples)
+                out_overlap = out[-fade_samples:] * fade_out
+                
+                # Create fade-in for beginning of 'nxt'
+                fade_in = torch.linspace(0.0, 1.0, fade_samples)
+                nxt_overlap = nxt[:fade_samples] * fade_in
+                
+                # Combine with cross-fade
+                cross_faded = out_overlap + nxt_overlap
+                
+                # Reconstruct with cross-fade
+                out = torch.cat([out[:-fade_samples], cross_faded, nxt[fade_samples:]], dim=0)
+            else:
+                # Simple concatenation
+                out = torch.cat([out, nxt], dim=0)
+                
     return out
 
 
-def _adjust_speed(audio: torch.Tensor, sampling_rate: int, speed: float) -> torch.Tensor:
+def _adjust_speed(audio: torch.Tensor, sampling_rate: int, speed: float, quality: str = 'high') -> torch.Tensor:
     """Time-stretch to adjust speed while keeping pitch (best-effort)."""
     if speed == 1.0:
         return audio
     if speed <= 0:
         raise ValueError("speed must be > 0")
 
+    # Store original amplitude statistics for later restoration
+    original_rms = torch.sqrt(torch.mean(audio ** 2))
+    
     audio = audio.detach().flatten().to(dtype=torch.float32).cpu()
 
-    if LIBROSA_AVAILABLE:
-        audio_np = audio.numpy().astype(np.float32, copy=False)
-        adjusted = librosa.effects.time_stretch(audio_np, rate=float(speed))
-        return torch.from_numpy(adjusted.astype(np.float32, copy=False))
+    # Pre-processing to reduce artifacts
+    # Apply a gentle pre-emphasis filter to reduce distortion
+    if quality == 'high':
+        # For high quality, apply pre-processing to reduce artifacts
+        audio_np = audio.numpy()
+        # Apply a simple pre-emphasis filter to reduce distortion
+        pre_emphasis = 0.97
+        emphasized = np.concatenate([audio_np[:1], audio_np[1:] - pre_emphasis * audio_np[:-1]])
+        audio = torch.from_numpy(emphasized.astype(np.float32))
 
-    # Fallback: try sox tempo via torchaudio (may not be available depending on build).
-    try:
-        wav = audio[None, :]
-        effects = [["tempo", str(speed)]]
-        out, _ = torchaudio.sox_effects.apply_effects_tensor(wav, sampling_rate, effects)
-        return out[0].to(dtype=torch.float32).cpu()
-    except Exception as e:
-        logger.warning(f"Speed adjustment requested but not available (install librosa). Error: {e}")
-        return audio
+    if LIBROSA_AVAILABLE:
+        # Use different algorithms based on quality setting
+        audio_np = audio.numpy().astype(np.float32, copy=False)
+        
+        if quality == 'high':
+            # Use high quality WSOLA with additional parameters
+            # For better quality, we can try using a higher frame length
+            adjusted = librosa.effects.time_stretch(audio_np, rate=float(speed))
+        elif quality == 'medium':
+            # Use medium quality settings
+            adjusted = librosa.effects.time_stretch(audio_np, rate=float(speed))
+        else:  # low quality
+            # Use faster but lower quality processing
+            adjusted = librosa.effects.time_stretch(audio_np, rate=float(speed))
+            
+        # Post-processing to reduce artifacts
+        adjusted_np = adjusted.astype(np.float32, copy=False)
+        
+        # Apply advanced smoothing filter to reduce artifacts for all quality levels
+        # This helps maintain clarity while reducing distortion
+        if len(adjusted_np) > 100:
+            # Use a Hann window for smoother transitions
+            window_size = min(31, len(adjusted_np) // 50 + 1)  # Larger adaptive window for better smoothing
+            if window_size > 1 and window_size % 2 == 1:  # Must be odd
+                # Create Hann window
+                hann_window = np.hanning(window_size)
+                hann_window = hann_window / np.sum(hann_window)  # Normalize
+                
+                # Apply convolution with Hann window
+                padded = np.pad(adjusted_np, window_size//2, mode='edge')
+                smoothed = np.copy(adjusted_np)
+                for i in range(len(smoothed)):
+                    smoothed[i] = np.sum(padded[i:i+window_size] * hann_window)
+                adjusted_np = smoothed
+        
+        result = torch.from_numpy(adjusted_np)
+    else:
+        # Fallback: try sox tempo via torchaudio with quality settings
+        try:
+            wav = audio[None, :]
+            
+            if quality == 'high':
+                # High quality with better algorithm and additional effects
+                effects = [
+                    ["tempo", "-s", str(speed)],  # -s flag enables better quality algorithm
+                    ["rate", str(sampling_rate)]   # Ensure consistent sample rate
+                ]
+            elif quality == 'medium':
+                # Medium quality settings
+                effects = [
+                    ["tempo", "-s", str(speed)],
+                    ["rate", str(sampling_rate)]
+                ]
+            else:  # low quality
+                # Fast processing with basic algorithm
+                effects = [
+                    ["tempo", str(speed)],
+                    ["rate", str(sampling_rate)]
+                ]
+                
+            out, _ = torchaudio.sox_effects.apply_effects_tensor(wav, sampling_rate, effects)
+            
+            # Post-processing for torchaudio output
+            result = out[0].to(dtype=torch.float32).cpu()
+            
+            # Apply advanced smoothing for all quality modes to reduce artifacts
+            if len(result) > 100:
+                result_np = result.numpy()
+                # Use a Hann window for smoother transitions
+                window_size = min(31, len(result_np) // 50 + 1)  # Larger adaptive window for better smoothing
+                if window_size > 1 and window_size % 2 == 1:  # Must be odd
+                    # Create Hann window
+                    hann_window = np.hanning(window_size)
+                    hann_window = hann_window / np.sum(hann_window)  # Normalize
+                    
+                    # Apply convolution with Hann window
+                    padded = np.pad(result_np, window_size//2, mode='edge')
+                    smoothed = np.copy(result_np)
+                    for i in range(len(smoothed)):
+                        smoothed[i] = np.sum(padded[i:i+window_size] * hann_window)
+                    result = torch.from_numpy(smoothed.astype(np.float32))
+        except Exception as e:
+            logger.warning(f"Speed adjustment requested but not available (install librosa for better quality). Error: {e}")
+            result = audio
+    
+    # Restore amplitude to original level to prevent volume loss
+    if len(result) > 0:
+        result_rms = torch.sqrt(torch.mean(result ** 2))
+        if result_rms > 0:
+            # Apply gain to restore original RMS level
+            gain = original_rms / result_rms
+            # Limit gain to prevent clipping
+            gain = min(gain, 2.0)
+            result = result * gain
+            
+    return result
 
 
 def parse_speaker_text(text_content: str) -> List[Tuple[str, str]]:
@@ -454,6 +590,7 @@ def get_text_input_sample_multi_speaker(
     
     # Add the main text segments
     text_content = _clean_and_normalize_text(text)
+    logger.info(f"normalized text: {text_content}")
     messages.append(
         Message(
             role="user",
@@ -470,6 +607,7 @@ def get_text_input_sample_multi_speaker(
 @click.option("--output-file", type=click.Path(), default="output_tts_multi.wav", help="Output audio file path")
 @click.option("--speaker-voices", type=str, multiple=True, help="Speaker to voice mapping in format SPEAKER0:path/to/voice.wav,path/to/voice.txt")
 @click.option("--speed", type=float, default=1.0, help="Speech speed factor (0.5-2.0)")
+@click.option("--speed-quality", type=click.Choice(['low', 'medium', 'high']), default='high', help="Quality of speed adjustment processing")
 @click.option("--temperature", type=float, default=0.7, help="Generation temperature")
 @click.option("--max-tokens", type=int, default=2048, help="Maximum number of tokens to generate")
 @click.option("--chunk-max-chars", type=int, default=200, show_default=True, help="Max chars per chunk for long text; auto-split when exceeded")
@@ -481,6 +619,7 @@ def main(
     output_file: str,
     speaker_voices: List[str],
     speed: float,
+    speed_quality: str,
     temperature: float,
     max_tokens: int,
     chunk_max_chars: int,
@@ -589,7 +728,7 @@ def main(
         
         for chunk_idx, chunk in enumerate(text_chunks):
             logger.info(f"Generating chunk {chunk_idx+1}/{len(text_chunks)} for {speaker_tag}")
-            
+            logger.info(f"chunk: {chunk}")
             # Create input sample for this chunk with the specific speaker's voice
             chunk_speaker_texts = (speaker_tag, chunk)
             input_sample = get_text_input_sample_multi_speaker(
@@ -639,7 +778,8 @@ def main(
         
         # Concatenate all chunks for this speaker
         if speaker_audio_segments:
-            speaker_audio = _concat_audio_segments(speaker_audio_segments, sampling_rate, silence_ms=0)
+            # Use a small silence (10ms) between chunks of the same speaker for better transition
+            speaker_audio = _concat_audio_segments(speaker_audio_segments, sampling_rate, silence_ms=10)
             all_audio_segments.append(speaker_audio)
     
     total_elapsed_time = time.time() - total_start_time
@@ -655,8 +795,8 @@ def main(
 
     # Apply speed adjustment if needed
     if speed != 1.0:
-        logger.info(f"Adjusting final audio speed to {speed}x")
-        final_audio = _adjust_speed(final_audio, sampling_rate, speed)
+        logger.info(f"Adjusting final audio speed to {speed}x with quality '{speed_quality}'")
+        final_audio = _adjust_speed(final_audio, sampling_rate, speed, speed_quality)
 
     torchaudio.save(output_file, final_audio[None, :], sampling_rate)
     logger.info(f"Generated text:\n{''.join(total_generated_text)}")

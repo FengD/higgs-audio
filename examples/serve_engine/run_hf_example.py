@@ -1,4 +1,6 @@
-"""Example for using HiggsAudio for generating both the transcript and audio in an interleaved manner."""
+"""Example for using HiggsAudio for generating both the transcript and audio in an interleaved manner.
+Supports multiple speakers with different voice characteristics.
+"""
 
 from boson_multimodal.serve.serve_engine import HiggsAudioServeEngine, HiggsAudioResponse
 import torch

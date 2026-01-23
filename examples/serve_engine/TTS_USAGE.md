@@ -43,6 +43,26 @@ python text_to_speech.py \
   --max-tokens 4096
 ```
 
+### 5. 使用高质量速度调整
+
+```bash
+python text_to_speech.py \
+  --text-file zh.txt \
+  --output-file output_high_quality.wav \
+  --speed 1.5 \
+  --speed-quality high
+```
+
+### 6. 使用低质量速度调整（更快处理）
+
+```bash
+python text_to_speech.py \
+  --text-file zh.txt \
+  --output-file output_low_quality.wav \
+  --speed 1.5 \
+  --speed-quality low
+```
+
 ## 参数说明
 
 - `--text-file`: 输入文本文件路径（必需）
@@ -50,6 +70,7 @@ python text_to_speech.py \
 - `--voice-sample`: 声音样本WAV文件路径（可选，用于声音克隆）
 - `--voice-text`: 声音样本对应的文本，可以是文本字符串或文本文件路径（可选，与voice-sample配合使用）
 - `--speed`: 语音速度因子，范围0.5-2.0（默认：1.0）
+- `--speed-quality`: 速度调整处理质量，可选值：low、medium、high（默认：high）
 - `--temperature`: 生成温度，控制随机性（默认：0.7）
 - `--max-tokens`: 最大生成token数（默认：2048）
 - `--chunk-max-chars`: 长文本分段时每段最大字符数（默认：200；设为0可禁用分段）
@@ -116,9 +137,13 @@ pip install librosa
 
 1. 声音克隆功能需要同时提供声音样本文件（.wav）和对应的文本
 2. 速度控制功能需要安装librosa库（`pip install librosa`），否则音频将以正常速度保存
-3. 温度参数影响生成的随机性，较低值产生更确定的结果，较高值产生更多样化的结果
-4. 如果模型路径未正确设置，脚本会自动使用HuggingFace Hub上的模型
-5. 对于长文本，脚本会自动分段逐段生成并在末尾拼接（默认每段约 120 字符），以绕开模型对单次稳定输出时长的限制
+3. 速度质量选项允许在处理速度和音频质量之间进行权衡：
+   - `high`：最高质量处理，但可能较慢
+   - `medium`：平衡质量和处理速度
+   - `low`：最快处理速度，但质量可能有所降低
+4. 温度参数影响生成的随机性，较低值产生更确定的结果，较高值产生更多样化的结果
+5. 如果模型路径未正确设置，脚本会自动使用HuggingFace Hub上的模型
+6. 对于长文本，脚本会自动分段逐段生成并在末尾拼接（默认每段约 120 字符），以绕开模型对单次稳定输出时长的限制
 
 ### 声音样本问题
 

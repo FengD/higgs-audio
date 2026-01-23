@@ -41,6 +41,24 @@ python text_to_speech_multi_speaker.py --text-file input_multiuser.txt --output-
 
 详见[TTS_MULTI_SPEAKER_USAGE.md](TTS_MULTI_SPEAKER_USAGE.md)获取详细使用说明。
 
+### 5. 使用Web界面和API服务
+
+我们还提供了一个基于Web的界面和RESTful API服务，可以通过浏览器或HTTP请求使用多说话人TTS功能：
+
+```bash
+# 启动API服务
+python start_tts_api.py
+
+# 然后在浏览器中打开 http://localhost:8000 访问Web界面
+```
+
+API端点：
+- `POST /tts/multi-speaker` - 生成多说话人语音
+- `GET /health` - 健康检查
+- `GET /docs` - API文档
+
+详见下方的API使用说明。
+
 ## 参数说明
 
 - `--text-file`: 输入文本文件的路径（UTF-8编码）

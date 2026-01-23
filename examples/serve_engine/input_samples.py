@@ -107,3 +107,50 @@ INPUT_SAMPLES = {
     "voice_clone_fr": get_voice_clone_input_sample_fr
 }
 
+
+def get_multi_speaker_input_sample():
+    # Reference voices for two speakers
+    reference_text_0 = "Twas the night before my birthday. Hooray! It's almost here! It may not be a holiday, but it's the best day of the year."
+    reference_audio_0 = encode_base64_content_from_file(
+        os.path.join(os.path.dirname(__file__), "../voice_prompts/belinda.wav")
+    )
+    
+    reference_text_1 = "Welcome to the world of artificial intelligence. Today we'll explore the latest developments in neural networks."
+    reference_audio_1 = encode_base64_content_from_file(
+        os.path.join(os.path.dirname(__file__), "../voice_prompts/chadwick.wav")
+    )
+    
+    messages = [
+        # First speaker reference
+        Message(
+            role="user",
+            content=f"[SPEAKER0] {reference_text_0}",
+        ),
+        Message(
+            role="assistant",
+            content=AudioContent(raw_audio=reference_audio_0, audio_url="placeholder"),
+        ),
+        # Second speaker reference
+        Message(
+            role="user",
+            content=f"[SPEAKER1] {reference_text_1}",
+        ),
+        Message(
+            role="assistant",
+            content=AudioContent(raw_audio=reference_audio_1, audio_url="placeholder"),
+        ),
+        # Dialogue
+        Message(
+            role="user",
+            content="[SPEAKER0] Hello there! I'm excited to discuss artificial intelligence with you today.",
+        ),
+        Message(
+            role="user",
+            content="[SPEAKER1] Likewise! I've been looking forward to this conversation. What aspects of AI interest you most?",
+        ),
+    ]
+    return ChatMLSample(messages=messages)
+
+
+INPUT_SAMPLES["multi_speaker"] = get_multi_speaker_input_sample
+

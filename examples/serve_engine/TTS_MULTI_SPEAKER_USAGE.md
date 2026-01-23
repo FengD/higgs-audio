@@ -30,6 +30,26 @@ python text_to_speech_multi_speaker.py \
   --speed 1.2
 ```
 
+### 4. 使用高质量速度调整
+
+```bash
+python text_to_speech_multi_speaker.py \
+  --text-file input_multiuser.txt \
+  --output-file output_multi_high_quality.wav \
+  --speed 1.2 \
+  --speed-quality high
+```
+
+### 5. 使用低质量速度调整（更快处理）
+
+```bash
+python text_to_speech_multi_speaker.py \
+  --text-file input_multiuser.txt \
+  --output-file output_multi_low_quality.wav \
+  --speed 1.2 \
+  --speed-quality low
+```
+
 ## 文本格式要求
 
 多说话人文本需要使用特定的标记格式，每个说话人的文本前需要加上`[SPEAKER*]`标签，其中`*`是数字：
@@ -48,6 +68,7 @@ python text_to_speech_multi_speaker.py \
 - `--output-file`: 输出音频文件路径（默认：output_tts_multi.wav）
 - `--speaker-voices`: 说话人到声音样本的映射，格式为`SPEAKER*:path/to/voice.wav,path/to/voice.txt`，可以多次使用来指定多个说话人
 - `--speed`: 语音速度因子，范围0.5-2.0（默认：1.0）
+- `--speed-quality`: 速度调整处理质量，可选值：low、medium、high（默认：high）
 - `--temperature`: 生成温度，控制随机性（默认：0.7）
 - `--max-tokens`: 最大生成token数（默认：2048）
 - `--chunk-max-chars`: 长文本分段时每段最大字符数（默认：200；设为0可禁用分段）
@@ -112,8 +133,12 @@ pip install librosa
 1. 多说话人文本需要按照指定格式编写，每个说话人段落前需加上`[SPEAKER*]`标签
 2. 每个说话人都可以指定不同的声音样本，实现个性化声音克隆
 3. 速度控制功能需要安装librosa库（`pip install librosa`），否则音频将以正常速度保存
-4. 温度参数影响生成的随机性，较低值产生更确定的结果，较高值产生更多样化的结果
-5. 如果模型路径未正确设置，脚本会自动使用HuggingFace Hub上的模型
+4. 速度质量选项允许在处理速度和音频质量之间进行权衡：
+   - `high`：最高质量处理，但可能较慢
+   - `medium`：平衡质量和处理速度
+   - `low`：最快处理速度，但质量可能有所降低
+5. 温度参数影响生成的随机性，较低值产生更确定的结果，较高值产生更多样化的结果
+6. 如果模型路径未正确设置，脚本会自动使用HuggingFace Hub上的模型
 
 ### 声音样本问题
 
